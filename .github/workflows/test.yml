@@ -24,6 +24,17 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --ignore-scripts
+      - name: Pack the release tarball
+        run: |
+          ./node_modules/.bin/clean-publish --without-publish --temp-dir "$RUNNER_TEMP/publish"
+          cd "$RUNNER_TEMP/publish"
+          npm pack --ignore-scripts
+      - name: Upload the release tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarball
+          path: ${{ runner.temp }}/publish/postcss-8.4.47.tgz
+          if-no-files-found: error
       - name: Run tests
         run: pnpm test
   short:
