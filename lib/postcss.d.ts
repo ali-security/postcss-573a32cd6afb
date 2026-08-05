@@ -229,7 +229,7 @@ declare namespace postcss {
   export interface Parser<RootNode = Document | Root> {
     (
       css: { toString(): string } | string,
-      opts?: Pick<ProcessOptions, 'from' | 'map'>
+      opts?: Pick<ProcessOptions, 'from' | 'map' | 'unsafeMap'>
     ): RootNode
   }
 
@@ -346,6 +346,11 @@ declare namespace postcss {
      * to generate correct source maps.
      */
     to?: string
+
+    /**
+     * Disable source map file protections.
+     */
+    unsafeMap?: boolean
   }
 
   export type Postcss = typeof postcss

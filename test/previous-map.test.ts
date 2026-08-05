@@ -7,7 +7,7 @@ import {
   unlinkSync,
   writeFileSync
 } from 'fs'
-import { join } from 'path'
+import { join, sep } from 'path'
 import { SourceMapConsumer } from 'source-map-js'
 import { pathToFileURL } from 'url'
 import { test } from 'uvu'
@@ -24,6 +24,20 @@ let mapObj = {
   version: 3
 }
 let map = JSON.stringify(mapObj)
+
+// `sourceMappingURL` is a URL, so it always uses `/`, even on Windows.
+function annotationURL(path: string): string {
+  return path.split(sep).join('/')
+}
+
+function catchParse(css: string, opts?: any): string {
+  try {
+    parse(css, opts)
+    return ''
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e)
+  }
+}
 
 function deleteDir(path: string): void {
   if (existsSync(path)) {
@@ -188,6 +202,93 @@ test('reads only the last map from annotation', () => {
       '\n/*# sourceMappingURL=c.map */',
     { from: file }
   )
+
+  is(root.source?.input.map.text, map)
+  is(root.source?.input.map.root, dir)
+})
+
+test('reads map from annotation in a subdir', () => {
+  mkdirSync(dir)
+  mkdirSync(join(dir, 'maps'))
+  writeFileSync(join(dir, 'maps', 'a.map'), map)
+  let root = parse('a{}\n/*# sourceMappingURL=maps/a.map */', {
+    from: join(dir, 'a.css')
+  })
+
+  is(root.source?.input.map.text, map)
+  is(root.source?.input.map.root, join(dir, 'maps'))
+})
+
+test('reads map from annotation with XSSI prefix', () => {
+  mkdirSync(dir)
+  writeFileSync(join(dir, 'a.css.map'), ")]}'\n" + map)
+  let root = parse('a{}\n/*# sourceMappingURL=a.css.map */', {
+    from: join(dir, 'a.css')
+  })
+
+  is(root.source?.input.map.root, dir)
+  is(root.source?.input.map.consumer() instanceof SourceMapConsumer, true)
+})
+
+test('does not load annotation without .map extension', () => {
+  mkdirSync(dir)
+  writeFileSync(join(dir, 'secret.txt'), map)
+  let root = parse('a{}\n/*# sourceMappingURL=secret.txt */', {
+    from: join(dir, 'a.css')
+  })
+
+  type(root.source?.input.map, 'undefined')
+})
+
+test('does not load annotation outside of CSS file dir', () => {
+  mkdirSync(dir)
+  mkdirSync(join(dir, 'one'))
+  writeFileSync(join(dir, 'secret.map'), map)
+  let root = parse('a{}\n/*# sourceMappingURL=../secret.map */', {
+    from: join(dir, 'one', 'a.css')
+  })
+
+  type(root.source?.input.map, 'undefined')
+})
+
+test('does not load annotation by absolute path', () => {
+  mkdirSync(dir)
+  mkdirSync(join(dir, 'one'))
+  writeFileSync(join(dir, 'secret.map'), map)
+  let url = annotationURL(join(dir, 'secret.map'))
+  let root = parse(`a{}\n/*# sourceMappingURL=${url} */`, {
+    from: join(dir, 'one', 'a.css')
+  })
+
+  type(root.source?.input.map, 'undefined')
+})
+
+test('does not load annotation without from option', () => {
+  mkdirSync(dir)
+  writeFileSync(join(dir, 'secret.map'), map)
+  let url = annotationURL(join(dir, 'secret.map'))
+  let root = parse(`a{}\n/*# sourceMappingURL=${url} */`)
+
+  type(root.source?.input.map, 'undefined')
+})
+
+test('ignores annotation with non-JSON content', () => {
+  mkdirSync(dir)
+  writeFileSync(join(dir, 'a.css.map'), 'top secret data')
+  let css = 'a{}\n/*# sourceMappingURL=a.css.map */'
+  let opts = { from: join(dir, 'a.css') }
+
+  is(catchParse(css, opts), '')
+  type(parse(css, opts).source?.input.map, 'undefined')
+})
+
+test('loads blocked annotation on unsafeMap option', () => {
+  mkdirSync(dir)
+  writeFileSync(join(dir, 'secret.txt'), map)
+  let root = parse('a{}\n/*# sourceMappingURL=secret.txt */', {
+    from: join(dir, 'a.css'),
+    unsafeMap: true
+  })
 
   is(root.source?.input.map.text, map)
   is(root.source?.input.map.root, dir)
